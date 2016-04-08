@@ -282,7 +282,7 @@ exports.BattleAbilities = {
 	"cheekpouch": {
 		desc: "If this Pokemon eats a Berry, it restores 1/3 of its maximum HP, rounded down, in addition to the Berry's effect.",
 		shortDesc: "If this Pokemon eats a Berry, it restores 1/3 of its max HP after the Berry's effect.",
-		onEatItem: function (item, pokemon) {
+		onAfterEat: function (item, pokemon) {
 			this.heal(pokemon.maxhp / 3);
 		},
 		id: "cheekpouch",

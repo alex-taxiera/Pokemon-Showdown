@@ -1017,6 +1017,7 @@ BattlePokemon = (() => {
 			this.battle.add('-enditem', this, item, '[eat]');
 
 			this.battle.singleEvent('Eat', item, this.itemData, this, source, sourceEffect);
+			this.battle.runEvent('AfterEat', this, null, null, item);
 
 			this.lastItem = this.item;
 			this.item = '';
