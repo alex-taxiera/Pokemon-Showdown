@@ -4,7 +4,16 @@
 // The rules that formats use are stored in data/rulesets.js
 
 exports.Formats = [
+	{
+		section: 'Bottle Battles',
+	},
+	{
+		name: '[Gen 7] Bottle Battles',
+		desc: ['Garbage'],
 
+		mod: 'bottle',
+		ruleset: ['Pokemon', 'Standard'],
+	},
 	// USM Singles
 	///////////////////////////////////////////////////////////////////
 	{
