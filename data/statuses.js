@@ -12,10 +12,10 @@ exports.BattleStatuses = {
 				this.add('-status', target, 'brn');
 			}
 		},
-		// Damage reduction is handled directly in the battle-engine.js damage function
+		// Damage reduction is handled directly in the sim/battle.js damage function
 		onResidualOrder: 9,
 		onResidual: function (pokemon) {
-			this.damage(pokemon.maxhp / 8);
+			this.damage(pokemon.maxhp / 16);
 		},
 	},
 	par: {
@@ -29,7 +29,7 @@ exports.BattleStatuses = {
 		},
 		onModifySpe: function (spe, pokemon) {
 			if (!pokemon.hasAbility('quickfeet')) {
-				return this.chainModify(0.25);
+				return this.chainModify(0.5);
 			}
 		},
 		onBeforeMovePriority: 1,
@@ -150,8 +150,6 @@ exports.BattleStatuses = {
 	confusion: {
 		// this is a volatile status
 		onStart: function (target, source, sourceEffect) {
-			let result = this.runEvent('TryConfusion', target, source, sourceEffect);
-			if (!result) return result;
 			if (sourceEffect && sourceEffect.id === 'lockedmove') {
 				this.add('-start', target, 'confusion', '[fatigue]');
 			} else {
@@ -170,9 +168,10 @@ exports.BattleStatuses = {
 				return;
 			}
 			this.add('-activate', pokemon, 'confusion');
-			if (this.random(2) === 0) {
+			if (this.random(3) > 0) {
 				return;
 			}
+			this.activeTarget = pokemon;
 			this.damage(this.getDamage(pokemon, pokemon, 40), pokemon, pokemon, {
 				id: 'confused',
 				effectType: 'Move',
@@ -215,7 +214,7 @@ exports.BattleStatuses = {
 		},
 		onResidualOrder: 11,
 		onResidual: function (pokemon) {
-			if (this.effectData.source && (!this.effectData.source.isActive || this.effectData.source.hp <= 0)) {
+			if (this.effectData.source && (!this.effectData.source.isActive || this.effectData.source.hp <= 0 || !this.effectData.source.activeTurns)) {
 				delete pokemon.volatiles['partiallytrapped'];
 				return;
 			}
@@ -278,11 +277,27 @@ exports.BattleStatuses = {
 		onLockMoveTarget: function () {
 			return this.effectData.targetLoc;
 		},
+		onMoveAborted: function (pokemon) {
+			pokemon.removeVolatile('twoturnmove');
+		},
 	},
 	choicelock: {
 		onStart: function (pokemon) {
-			if (!this.activeMove.id || this.activeMove.sourceEffect && this.activeMove.sourceEffect !== this.activeMove.id) return false;
+			if (!this.activeMove.id || this.activeMove.hasBounced) return false;
 			this.effectData.move = this.activeMove.id;
+		},
+		onBeforeMove: function (pokemon, target, move) {
+			if (!pokemon.getItem().isChoice || !pokemon.hasMove(this.effectData.move)) {
+				pokemon.removeVolatile('choicelock');
+				return;
+			}
+			if (move.id !== this.effectData.move && move.id !== 'struggle') {
+				// Fails even if the Choice item is being ignored, and no PP is lost
+				this.addMove('move', pokemon, move.name);
+				this.attrLastMove('[still]');
+				this.add('-fail', pokemon);
+				return false;
+			}
 		},
 		onDisableMove: function (pokemon) {
 			if (!pokemon.getItem().isChoice || !pokemon.hasMove(this.effectData.move)) {
@@ -348,15 +363,6 @@ exports.BattleStatuses = {
 				target.removeVolatile('Protect');
 				target.removeVolatile('Endure');
 
-				if (target.hasAbility('wonderguard') && this.gen >= 5) {
-					this.debug('Wonder Guard immunity: ' + move.id);
-					if (target.runEffectiveness(move) <= 0) {
-						this.add('-activate', target, 'ability: Wonder Guard');
-						this.effectData.positions[i] = null;
-						return null;
-					}
-				}
-
 				if (posData.source.hasAbility('infiltrator') && this.gen >= 6) {
 					posData.moveData.infiltrates = true;
 				}
@@ -367,6 +373,22 @@ exports.BattleStatuses = {
 			}
 			if (finished) {
 				side.removeSideCondition('futuremove');
+			}
+		},
+	},
+	healreplacement: {
+		// this is a side condition
+		onStart: function (side, source, sourceEffect) {
+			this.effectData.position = source.position;
+			this.effectData.sourceEffect = sourceEffect;
+			this.add('-activate', source, 'healreplacement');
+		},
+		onSwitchInPriority: 1,
+		onSwitchIn: function (target) {
+			if (!target.fainted && target.position === this.effectData.position) {
+				target.heal(target.maxhp);
+				this.add('-heal', target, target.getHealth, '[from] move: ' + this.effectData.sourceEffect, '[zeffect]');
+				target.side.removeSideCondition('healreplacement');
 			}
 		},
 	},
@@ -397,19 +419,6 @@ exports.BattleStatuses = {
 		onBasePower: function (basePower, user, target, move) {
 			this.debug('Gem Boost');
 			return this.chainModify([0x14CD, 0x1000]);
-		},
-	},
-	aura: {
-		duration: 1,
-		onBasePowerPriority: 8,
-		onBasePower: function (basePower, user, target, move) {
-			let modifier = 0x1547;
-			this.debug('Aura Boost');
-			if (user.volatiles['aurabreak']) {
-				modifier = 0x0C00;
-				this.debug('Aura Boost reverted by Aura Break');
-			}
-			return this.chainModify([modifier, 0x1000]);
 		},
 	},
 
@@ -637,18 +646,31 @@ exports.BattleStatuses = {
 		},
 	},
 
+	// Arceus and Silvally's actual typing is implemented here.
+	// Their true typing for all their formes is Normal, and it's only
+	// Multitype and RKS System, respectively, that changes their type,
+	// but their formes are specified to be their corresponding type
+	// in the Pokedex, so that needs to be overridden.
+	// This is mainly relevant for Hackmons and Balanced Hackmons.
 	arceus: {
-		// Arceus's actual typing is implemented here
-		// Arceus's true typing for all its formes is Normal, and it's only
-		// Multitype that changes its type, but its formes are specified to
-		// be their corresponding type in the Pokedex, so that needs to be
-		// overridden. This is mainly relevant for Hackmons and Balanced
-		// Hackmons.
 		onSwitchInPriority: 101,
 		onSwitchIn: function (pokemon) {
 			let type = 'Normal';
 			if (pokemon.ability === 'multitype') {
 				type = pokemon.getItem().onPlate;
+				if (!type || type === true) {
+					type = 'Normal';
+				}
+			}
+			pokemon.setType(type, true);
+		},
+	},
+	silvally: {
+		onSwitchInPriority: 101,
+		onSwitchIn: function (pokemon) {
+			let type = 'Normal';
+			if (pokemon.ability === 'rkssystem') {
+				type = pokemon.getItem().onMemory;
 				if (!type || type === true) {
 					type = 'Normal';
 				}

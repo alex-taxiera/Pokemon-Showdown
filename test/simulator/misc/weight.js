@@ -1,6 +1,8 @@
 'use strict';
 
-const assert = require('assert');
+const assert = require('./../../assert');
+const common = require('./../../common');
+
 let battle;
 
 describe('Heavy Metal', function () {
@@ -9,12 +11,12 @@ describe('Heavy Metal', function () {
 	});
 
 	it('should double the weight of a Pokemon', function () {
-		battle = BattleEngine.Battle.construct('battle-heavy', 'customgame');
-		battle.join('p1', 'Guest 1', 1, [{species: "Simisear", ability: 'heavymetal', moves: ['nastyplot']}]);
-		battle.join('p2', 'Guest 2', 1, [{species: "Simisage", ability: 'gluttony', moves: ['grassknot']}]);
-		battle.commitDecisions(); // Team Preview
+		battle = common.createBattle([
+			[{species: "Simisear", ability: 'heavymetal', moves: ['nastyplot']}],
+			[{species: "Simisage", ability: 'gluttony', moves: ['grassknot']}],
+		]);
 		let basePower = 0;
-		battle.on('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
+		battle.onEvent('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
 			if (move.id === 'grassknot') {
 				basePower = bp;
 			}
@@ -24,12 +26,12 @@ describe('Heavy Metal', function () {
 	});
 
 	it('should be negated by Mold Breaker', function () {
-		battle = BattleEngine.Battle.construct('battle-heavy-moldbreaker', 'customgame');
-		battle.join('p1', 'Guest 1', 1, [{species: "Simisear", ability: 'heavymetal', moves: ['nastyplot']}]);
-		battle.join('p2', 'Guest 2', 1, [{species: "Simisage", ability: 'moldbreaker', moves: ['grassknot']}]);
-		battle.commitDecisions(); // Team Preview
+		battle = common.createBattle([
+			[{species: "Simisear", ability: 'heavymetal', moves: ['nastyplot']}],
+			[{species: "Simisage", ability: 'moldbreaker', moves: ['grassknot']}],
+		]);
 		let basePower = 0;
-		battle.on('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
+		battle.onEvent('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
 			if (move.id === 'grassknot') {
 				basePower = bp;
 			}
@@ -45,12 +47,12 @@ describe('Light Metal', function () {
 	});
 
 	it('should halve the weight of a Pokemon', function () {
-		battle = BattleEngine.Battle.construct('battle-light', 'customgame');
-		battle.join('p1', 'Guest 1', 1, [{species: "Registeel", ability: 'lightmetal', moves: ['curse']}]);
-		battle.join('p2', 'Guest 2', 1, [{species: "Simisage", ability: 'gluttony', moves: ['grassknot']}]);
-		battle.commitDecisions(); // Team Preview
+		battle = common.createBattle([
+			[{species: "Registeel", ability: 'lightmetal', moves: ['curse']}],
+			[{species: "Simisage", ability: 'gluttony', moves: ['grassknot']}],
+		]);
 		let basePower = 0;
-		battle.on('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
+		battle.onEvent('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
 			if (move.id === 'grassknot') {
 				basePower = bp;
 			}
@@ -60,12 +62,12 @@ describe('Light Metal', function () {
 	});
 
 	it('should be negated by Mold Breaker', function () {
-		battle = BattleEngine.Battle.construct('battle-light-moldbreaker', 'customgame');
-		battle.join('p1', 'Guest 1', 1, [{species: "Registeel", ability: 'lightmetal', moves: ['splash']}]);
-		battle.join('p2', 'Guest 2', 1, [{species: "Simisage", ability: 'moldbreaker', moves: ['grassknot']}]);
-		battle.commitDecisions(); // Team Preview
+		battle = common.createBattle([
+			[{species: "Registeel", ability: 'lightmetal', moves: ['splash']}],
+			[{species: "Simisage", ability: 'moldbreaker', moves: ['grassknot']}],
+		]);
 		let basePower = 0;
-		battle.on('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
+		battle.onEvent('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
 			if (move.id === 'grassknot') {
 				basePower = bp;
 			}
@@ -81,12 +83,12 @@ describe('Float Stone', function () {
 	});
 
 	it('should halve the weight of a Pokemon', function () {
-		battle = BattleEngine.Battle.construct('battle-floatstone', 'customgame');
-		battle.join('p1', 'Guest 1', 1, [{species: "Registeel", ability: 'clearbody', item: 'floatstone', moves: ['curse']}]);
-		battle.join('p2', 'Guest 2', 1, [{species: "Simisage", ability: 'gluttony', moves: ['grassknot']}]);
-		battle.commitDecisions(); // Team Preview
+		battle = common.createBattle([
+			[{species: "Registeel", ability: 'clearbody', item: 'floatstone', moves: ['curse']}],
+			[{species: "Simisage", ability: 'gluttony', moves: ['grassknot']}],
+		]);
 		let basePower = 0;
-		battle.on('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
+		battle.onEvent('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
 			if (move.id === 'grassknot') {
 				basePower = bp;
 			}
@@ -102,12 +104,12 @@ describe('Autotomize', function () {
 	});
 
 	it('should reduce the weight of a Pokemon by 100 kg with each use', function () {
-		battle = BattleEngine.Battle.construct('battle-autotomize', 'customgame');
-		battle.join('p1', 'Guest 1', 1, [{species: "Registeel", ability: 'clearbody', moves: ['autotomize']}]);
-		battle.join('p2', 'Guest 2', 1, [{species: "Simisage", ability: 'gluttony', item: 'laggingtail', moves: ['grassknot']}]);
-		battle.commitDecisions(); // Team Preview
+		battle = common.createBattle([
+			[{species: "Registeel", ability: 'clearbody', moves: ['autotomize']}],
+			[{species: "Simisage", ability: 'gluttony', item: 'laggingtail', moves: ['grassknot']}],
+		]);
 		let basePower = 0;
-		battle.on('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
+		battle.onEvent('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
 			if (move.id === 'grassknot') {
 				basePower = bp;
 			}
@@ -119,12 +121,12 @@ describe('Autotomize', function () {
 	});
 
 	it('should factor into weight before Heavy Metal does', function () {
-		battle = BattleEngine.Battle.construct('battle-heavy-autotomize', 'customgame');
-		battle.join('p1', 'Guest 1', 1, [{species: "Lairon", ability: 'heavymetal', moves: ['autotomize']}]);
-		battle.join('p2', 'Guest 2', 1, [{species: "Simisage", ability: 'gluttony', item: 'laggingtail', moves: ['grassknot']}]);
-		battle.commitDecisions(); // Team Preview
+		battle = common.createBattle([
+			[{species: "Lairon", ability: 'heavymetal', moves: ['autotomize']}],
+			[{species: "Simisage", ability: 'gluttony', item: 'laggingtail', moves: ['grassknot']}],
+		]);
 		let basePower = 0;
-		battle.on('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
+		battle.onEvent('BasePower', battle.getFormat(), function (bp, attacker, defender, move) {
 			if (move.id === 'grassknot') {
 				basePower = bp;
 			}

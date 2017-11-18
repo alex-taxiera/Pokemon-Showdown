@@ -2,8 +2,7 @@
 
 const assert = require('assert');
 
-let userUtils = require('./../../dev-tools/users-utils.js');
-let User = userUtils.User;
+const {User} = require('../../dev-tools/users-utils');
 
 describe('Rooms features', function () {
 	describe('Rooms', function () {
@@ -17,31 +16,91 @@ describe('Rooms features', function () {
 			});
 		});
 		describe('Rooms.rooms', function () {
-			it('should have null prototype', function () {
-				assert.strictEqual(Object.getPrototypeOf(Rooms.rooms), null);
-			});
-
-			it('should not have a native `constructor`', function () {
-				assert.ok(Rooms.rooms.constructor === undefined || Rooms.rooms.constructor instanceof Rooms.Room);
+			it('should be a Map', function () {
+				assert.ok(Rooms.rooms instanceof Map);
 			});
 		});
 	});
 
-	describe('BattleRoom', function () {
+	describe('GameRoom', function () {
+		const packedTeam = 'Weavile||lifeorb||swordsdance,knockoff,iceshard,iciclecrash|Jolly|,252,,,4,252|||||';
+
 		let room;
 		afterEach(function () {
-			if (room) room.expire();
+			Users.users.forEach(user => {
+				room.onLeave(user);
+				user.disconnectAll();
+				user.destroy();
+			});
+			if (room) room.destroy();
 		});
 
 		it('should allow two users to join the battle', function () {
 			let p1 = new User();
 			let p2 = new User();
-			let packedTeam = 'Weavile||lifeorb||swordsdance,knockoff,iceshard,iciclecrash|Jolly|,252,,,4,252|||||';
-			let options = [{rated: false, tour: false}, {rated: false, tour: true}, {rated: true, tour: false}, {rated: true, tour: true}];
+			let options = [{rated: false, tour: false}, {rated: false, tour: {onBattleWin() {}}}, {rated: true, tour: false}, {rated: true, tour: {onBattleWin() {}}}];
 			for (let option of options) {
-				room = Rooms.global.startBattle(p1, p2, 'customgame', packedTeam, packedTeam, option);
+				room = Rooms.createBattle('customgame', Object.assign({
+					p1,
+					p2,
+					p1team: packedTeam,
+					p2team: packedTeam,
+				}, option));
 				assert.ok(room.battle.p1 && room.battle.p2); // Automatically joined
 			}
+		});
+
+		it('should copy auth from tournament', function () {
+			const p1 = new User();
+			const p2 = new User();
+			const options = {
+				p1,
+				p2,
+				p1team: packedTeam,
+				p2team: packedTeam,
+				rated: false,
+				auth: {},
+				tour: {
+					onBattleWin() {},
+					room: {getAuth() {
+						return '%';
+					}},
+				},
+			};
+			room = Rooms.createBattle('customgame', options);
+			assert.strictEqual(room.getAuth(new User()), '%');
+		});
+
+		it('should prevent overriding tournament room auth by a tournament player', function () {
+			const p1 = new User();
+			const p2 = new User();
+			const roomStaff = new User();
+			roomStaff.forceRename("Room auth", true);
+			const administrator = new User();
+			administrator.forceRename("Admin", true);
+			administrator.group = '~';
+			const options = {
+				p1,
+				p2,
+				p1team: packedTeam,
+				p2team: packedTeam,
+				rated: false,
+				auth: {},
+				tour: {
+					onBattleWin() {},
+					room: {getAuth(user) {
+						return '%';
+					}},
+				},
+			};
+			room = Rooms.createBattle('customgame', options);
+			roomStaff.joinRoom(room);
+			administrator.joinRoom(room);
+			assert.strictEqual(room.getAuth(roomStaff), '%', 'before promotion attempt');
+			Chat.parse("/roomvoice Room auth", room, p1, p1.connections[0]);
+			assert.strictEqual(room.getAuth(roomStaff), '%', 'after promotion attempt');
+			Chat.parse("/roomvoice Room auth", room, administrator, administrator.connections[0]);
+			assert.strictEqual(room.getAuth(roomStaff), '+', 'after being promoted by an administrator');
 		});
 	});
 });

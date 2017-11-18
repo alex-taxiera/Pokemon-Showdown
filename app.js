@@ -20,7 +20,7 @@
  *   rooms.js. There's also a global room which every user is in, and
  *   handles miscellaneous things like welcoming the user.
  *
- * Tools - from tools.js
+ * Dex - from sim/dex.js
  *
  *   Handles getting data about Pokemon, items, etc.
  *
@@ -28,13 +28,9 @@
  *
  *   Handles Elo rating tracking for players.
  *
- * Simulator - from simulator.js
+ * Chat - from chat.js
  *
- *   Used to access the simulator itself.
- *
- * CommandParser - from command-parser.js
- *
- *   Parses text commands like /me
+ *   Handles chat and parses chat commands like /me and /ban
  *
  * Sockets - from sockets.js
  *
@@ -46,54 +42,47 @@
 
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
-
-/*********************************************************
- * Make sure we have everything set up correctly
- *********************************************************/
-
-// Make sure our dependencies are available, and install them if they
-// aren't
-
+// Check for version and dependencies
+try {
+	// I've gotten enough reports by people who don't use the launch
+	// script that this is worth repeating here
+	eval('{ let a = async () => {}; }');
+} catch (e) {
+	throw new Error("We require Node.js version 8 or later; you're using " + process.version);
+}
 try {
 	require.resolve('sockjs');
 } catch (e) {
-	if (require.main !== module) throw new Error("Dependencies unmet");
-
-	let command = 'npm install --production';
-	console.log('Installing dependencies: `' + command + '`...');
-	require('child_process').spawnSync('sh', ['-c', command], {stdio: 'inherit'});
+	throw new Error("Dependencies are unmet; run node pokemon-showdown before launching Pokemon Showdown again.");
 }
+
+const FS = require('./fs');
 
 /*********************************************************
  * Load configuration
  *********************************************************/
 
 try {
-	require.resolve('./config/config.js');
+	require.resolve('./config/config');
 } catch (err) {
 	if (err.code !== 'MODULE_NOT_FOUND') throw err; // should never happen
-
-	// Copy it over synchronously from config-example.js since it's needed before we can start the server
-	console.log("config.js doesn't exist - creating one with default settings...");
-	fs.writeFileSync(path.resolve(__dirname, 'config/config.js'),
-		fs.readFileSync(path.resolve(__dirname, 'config/config-example.js'))
-	);
-} finally {
-	global.Config = require('./config/config.js');
+	throw new Error('config.js does not exist; run node pokemon-showdown to set up the default config file before launching Pokemon Showdown again.');
 }
 
+global.Config = require('./config/config');
+
+global.Monitor = require('./monitor');
+
 if (Config.watchconfig) {
-	fs.watchFile(path.resolve(__dirname, 'config/config.js'), (curr, prev) => {
-		if (curr.mtime <= prev.mtime) return;
+	let configPath = require.resolve('./config/config');
+	FS(configPath).onModify(() => {
 		try {
-			delete require.cache[require.resolve('./config/config.js')];
-			global.Config = require('./config/config.js');
+			delete require.cache[configPath];
+			global.Config = require('./config/config');
 			if (global.Users) Users.cacheGroupData();
-			console.log('Reloaded config/config.js');
+			Monitor.notice('Reloaded config/config.js');
 		} catch (e) {
-			console.log('Error reloading config/config.js: ' + e.stack);
+			Monitor.adminlog(`Error reloading config/config.js: ${e.stack}`);
 		}
 	});
 }
@@ -102,49 +91,41 @@ if (Config.watchconfig) {
  * Set up most of our globals
  *********************************************************/
 
-global.Monitor = require('./monitor.js');
+global.Dex = require('./sim/dex');
+global.toId = Dex.getId;
 
-global.Tools = require('./tools.js');
-global.toId = Tools.getId;
+global.LoginServer = require('./loginserver');
 
-global.LoginServer = require('./loginserver.js');
+global.Ladders = require(Config.remoteladder ? './ladders-remote' : './ladders');
 
-global.Ladders = require(Config.remoteladder ? './ladders-remote.js' : './ladders.js');
+global.Users = require('./users');
 
-global.Users = require('./users.js');
+global.Punishments = require('./punishments');
 
-global.Rooms = require('./rooms.js');
+global.Chat = require('./chat');
 
-delete process.send; // in case we're a child process
-global.Verifier = require('./verifier.js');
+global.Rooms = require('./rooms');
+
+global.Verifier = require('./verifier');
 Verifier.PM.spawn();
-
-global.CommandParser = require('./command-parser.js');
-
-global.Simulator = require('./simulator.js');
 
 global.Tournaments = require('./tournaments');
 
-try {
-	global.Dnsbl = require('./dnsbl.js');
-} catch (e) {
-	global.Dnsbl = {query: () => {}, reverse: require('dns').reverse};
-}
-
-global.Cidr = require('./cidr.js');
+global.Dnsbl = require('./dnsbl');
+Dnsbl.loadDatacenters();
 
 if (Config.crashguard) {
 	// graceful crash - allow current battles to finish before restarting
 	process.on('uncaughtException', err => {
-		let crashMessage = require('./crashlogger.js')(err, 'The main process');
-		if (crashMessage !== 'lockdown') return;
-		let stack = Tools.escapeHTML(err.stack).split("\n").slice(0, 2).join("<br />");
-		if (Rooms.lobby) {
-			Rooms.lobby.addRaw('<div class="broadcast-red"><b>THE SERVER HAS CRASHED:</b> ' + stack + '<br />Please restart the server.</div>');
-			Rooms.lobby.addRaw('<div class="broadcast-red">You will not be able to start new battles until the server restarts.</div>');
-			Rooms.lobby.update();
+		let crashType = require('./crashlogger')(err, 'The main process');
+		if (crashType === 'lockdown') {
+			Rooms.global.startLockdown(err);
+		} else {
+			Rooms.global.reportCrash(err);
 		}
-		Rooms.global.lockdown = true;
+	});
+	process.on('unhandledRejection', err => {
+		throw err;
 	});
 }
 
@@ -152,20 +133,18 @@ if (Config.crashguard) {
  * Start networking processes to be connected to
  *********************************************************/
 
-// global.Sockets = require('./sockets.js');
-global.Sockets = require('./sockets-nocluster.js');
+global.Sockets = require('./sockets');
 
 exports.listen = function (port, bindAddress, workerCount) {
 	Sockets.listen(port, bindAddress, workerCount);
 };
 
 if (require.main === module) {
-	// if running with node app.js, set up the server directly
-	// (otherwise, wait for app.listen())
+	// Launch the server directly when app.js is the main module. Otherwise,
+	// in the case of app.js being imported as a module (e.g. unit tests),
+	// postpone launching until app.listen() is called.
 	let port;
-	if (process.argv[2]) {
-		port = parseInt(process.argv[2]); // eslint-disable-line radix
-	}
+	if (process.argv[2]) port = parseInt(process.argv[2]);
 	Sockets.listen(port);
 }
 
@@ -173,32 +152,11 @@ if (require.main === module) {
  * Set up our last global
  *********************************************************/
 
-// Generate and cache the format list.
-Tools.includeFormats();
-Rooms.global.formatListText = Rooms.global.getFormatListText();
-
-global.TeamValidator = require('./team-validator.js');
-TeamValidator.PM.spawn();
-
-// load ipbans at our leisure
-fs.readFile(path.resolve(__dirname, 'config/ipbans.txt'), (err, data) => {
-	if (err) return;
-	data = ('' + data).split("\n");
-	let rangebans = [];
-	for (let i = 0; i < data.length; i++) {
-		data[i] = data[i].split('#')[0].trim();
-		if (!data[i]) continue;
-		if (data[i].includes('/')) {
-			rangebans.push(data[i]);
-		} else if (!Users.bannedIps[data[i]]) {
-			Users.bannedIps[data[i]] = '#ipban';
-		}
-	}
-	Users.checkRangeBanned = Cidr.checker(rangebans);
-});
+global.TeamValidatorAsync = require('./team-validator-async');
+TeamValidatorAsync.PM.spawn();
 
 /*********************************************************
  * Start up the REPL server
  *********************************************************/
 
-require('./repl.js').start('app', cmd => eval(cmd));
+require('./repl').start('app', cmd => eval(cmd));
